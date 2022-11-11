@@ -78,7 +78,6 @@ process READS_CONCAT {
 }
 
 process STAR_INDEX {
-    conda 'condaPOINTseq.yml'
     tag "STAR Index"
 
     output:
@@ -92,7 +91,6 @@ process STAR_INDEX {
 }
 
 process GET_ANOT {
-    conda 'condaPOINTseq.yml'
     tag "GET_ANOT"
 
     output:
@@ -117,7 +115,6 @@ process GET_ANOT {
 
 // Pre-processing of reads
 process FASTQC {
-    conda 'condaPOINTseq.yml'
     publishDir "$params.outdir/1-fastqc", mode: 'copy'
     tag "FASTQC_$ID"
 
@@ -138,7 +135,6 @@ process FASTQC {
 }
 
 process TRIM {
-    conda 'condaPOINTseq.yml'
     publishDir "$params.outdir/2-trim", mode: 'copy'
     tag "TRIM_$ID"
 
@@ -163,7 +159,6 @@ process TRIM {
 }
 
 process FLASH {
-    conda 'condaPOINTseq.yml'
     publishDir "$params.outdir/QControl/FLASH", mode: 'copy'
     tag "FASTQC_$ID"
 
@@ -184,7 +179,6 @@ process FLASH {
 
 // Alignment of Reads 
 process STAR_ALIGN {
-    conda 'condaPOINTseq.yml'
     publishDir "$params.outdir/3-star", mode: 'copy'
     tag "STAR_ALIGN_${ID}"
 
@@ -211,7 +205,6 @@ process STAR_ALIGN {
 }
 
 process CREATE_BW {
-    conda 'condaPOINTseq.yml'
     publishDir "$params.outdir/3-star/strandBAMs", mode: 'copy'
     tag "STAR_ALIGN_${ID}"
 
@@ -237,7 +230,6 @@ process CREATE_BW {
 
 // Post-processing of reads
 process PRESEQ_LCEXTRAP {
-    conda 'condaPOINTseq.yml'
     publishDir "$params.outdir/QControl/PRESEQ", mode: 'copy'
     tag "PRESEQ_LCEXTRAP_${ID}"
 
@@ -256,7 +248,6 @@ process PRESEQ_LCEXTRAP {
 }
 
 process SAMTOOLS_STAT {
-    conda 'condaPOINTseq.yml'
     publishDir "$params.outdir/QControl/SAMTOOLS_STAT", mode: 'copy'
     tag "SAMTOOLS_STAT_${ID}"
 
@@ -278,7 +269,6 @@ process SAMTOOLS_STAT {
 }
 
 process FEATURE_COUNTS {
-    conda 'condaPOINTseq.yml'
     publishDir "$params.outdir/QControl/FEATURE_COUNTS", mode: 'copy'
     tag "FEATURE_COUNTS_${ID}"
 
@@ -297,7 +287,6 @@ process FEATURE_COUNTS {
 }
 
 process FEATURE_BIOTYPE {
-    conda 'condaPOINTseq.yml'
     publishDir "$params.outdir/QControl/FEATURE_BIOTYPE", mode: 'copy'
     tag "FEATURE_BIOTYPE"
 
@@ -316,7 +305,6 @@ process FEATURE_BIOTYPE {
 }
 
 process RSEQC_JUNCT_ANOT {
-    conda 'condaPOINTseq.yml'
     publishDir "$params.outdir/QControl/RSEQC/JUNCT_ANOT", mode: 'copy'
     tag "RSEQC_JUNCT_ANOT_${ID}"
 
@@ -336,7 +324,6 @@ process RSEQC_JUNCT_ANOT {
 }
 
 process RSEQC_JUNCT_SATUR {
-    conda 'condaPOINTseq.yml'
     publishDir "$params.outdir/QControl/RSEQC/JUNCT_SATUR", mode: 'copy'
     tag "RSEQC_JUNCT_SATUR_${ID}"
 
@@ -356,7 +343,6 @@ process RSEQC_JUNCT_SATUR {
 }
 
 process RSEQC_INFER_EXP {
-    conda 'condaPOINTseq.yml'
     publishDir "$params.outdir/QControl/RSEQC/INFER_EXP", mode: 'copy'
     tag "RSEQC_INFER_EXP_${ID}"
 
@@ -376,7 +362,6 @@ process RSEQC_INFER_EXP {
 }
 
 process RSEQC_READ_DISTR {
-    conda 'condaPOINTseq.yml'
     publishDir "$params.outdir/QControl/RSEQC/READ_DISTR", mode: 'copy'
     tag "RSEQC_READ_DISTR_${ID}"
 
@@ -396,7 +381,6 @@ process RSEQC_READ_DISTR {
 }
 
 process RSEQC_TIN {
-    conda 'condaPOINTseq.yml'
     publishDir "$params.outdir/QControl/RSEQC/TIN", mode: 'copy'
     tag "RSEQC_TIN_${ID}"
 
@@ -416,7 +400,6 @@ process RSEQC_TIN {
 }
 
 process RSEQC_INNER_DIST {
-    conda 'condaPOINTseq.yml'
     publishDir "$params.outdir/QControl/RSEQC/INNER_DIST", mode: 'copy'
     tag "RSEQC_INNER_DIST_${ID}"
 
@@ -436,7 +419,6 @@ process RSEQC_INNER_DIST {
 }
 
 process RSEQC_GENE_BODY_COV {
-    conda 'condaPOINTseq.yml'
     publishDir "$params.outdir/QControl/RSEQC/GENE_BODY_COV", mode: 'copy'
     tag "RSEQC_GENE_BODY_COV_${ID}"
 
@@ -457,7 +439,6 @@ process RSEQC_GENE_BODY_COV {
 }
 
 process MULTIQC {
-    conda 'condaPOINTseq.yml'
     publishDir "$params.outdir", mode: 'copy'
     tag "MULTIQC"
 
@@ -469,6 +450,6 @@ process MULTIQC {
 
     script:
     """
-    multiqc $projectDir/$params.outdir -c $projectDir/multiQC.config
+    multiqc $launchDir/$params.outdir -c $projectDir/multiQC.config
     """
 }
