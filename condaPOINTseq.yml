@@ -1,0 +1,18 @@
+name: POINTseq
+channels:
+  - conda-forge
+  - bioconda
+  
+dependencies:
+  - python=3.10
+  - star=2.7.0d
+  - fastqc=0.11.9
+  - trim-galore=0.6.7
+  - preseq=3.2.0
+  - multiqc=1.13
+  - samtools=1.16.1
+  - deeptools=3.5.1
+  - flash=1.2.11
+  - bedops=2.4.41
+  - rseqc=5.0.1
+  - subread=2.0.1
