@@ -17,3 +17,5 @@ dependencies:
   - bedops=2.4.41
   - rseqc=5.0.1
   - subread=2.0.1
+  - ucsc-gtftogenepred=377
+  - ucsc-genepredtobed=377
