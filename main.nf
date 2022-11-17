@@ -1,16 +1,14 @@
 #!/usr/bin/env nextflow
 
 /*
- * The following pipeline parameters specify the refence genomes
- * and read pairs and can be provided as command line options
- */
+ * POINT-seq nextflow pipeline
+ * By: Rui Sousa-Luis
+*/
 
 params.samples_info = "samplesInfo.txt"
 params.outdir = "results"
-params.cpus = 10
-params.genome_fasta = "/home/rluis/Projects_RSL/Genome/hg38_HISAT2_INDEX/Ensembl/GRCh38.p10.genome.fa"
-params.anot_GTF = "/home/rluis/Projects_RSL/Genome/GTF_hg38/Ensembl/Homo_sapiens.GRCh38.90_Wchr.gtf"
-params.index_STAR = "/home/rluis/Projects_RSL/Genome/hg38_STAR_INDEX"
+params.species = "homo_sapiens"
+params.version = 108
 params.each{ k, v -> println "params.${k.padRight(25)} = ${v}" }
 
 workflow {
@@ -18,10 +16,14 @@ workflow {
                     .fromPath(params.samples_info, checkIfExists: true)
                     .splitCsv()
                     .groupTuple()
+    
 
+    GET_ANOT(params.genomes[params.species]["gtf"],params.genomes[params.species]["fasta"])
+    STAR_INDEX(GET_ANOT.out)
+    
     // Conctatenate files from same sample
     READS_CONCAT(fastqFile)
-    GET_ANOT()
+
     // Quality control of reads
     FASTQC(READS_CONCAT.out)
 
@@ -30,20 +32,20 @@ workflow {
     FLASH(TRIM.out)
 
     // Align the reads & keep uniquely mapped reads in proper PE
-    STAR_ALIGN(params.index_STAR, TRIM.out)
+    STAR_ALIGN(STAR_INDEX.out, TRIM.out)
+    STRAND_SPLIT_BAM(STAR_ALIGN.out.sampleID, STAR_ALIGN.out.bams, STAR_ALIGN.out.bam_index)
 
     SAMTOOLS_STAT(STAR_ALIGN.out.sampleID, STAR_ALIGN.out.bams, STAR_ALIGN.out.bam_index)
     PRESEQ_LCEXTRAP(STAR_ALIGN.out.sampleID, STAR_ALIGN.out.bams, STAR_ALIGN.out.bam_index)
-    FEATURE_COUNTS(STAR_ALIGN.out.sampleID, STAR_ALIGN.out.bams, STAR_ALIGN.out.bam_index)
-
-    FEATURE_BIOTYPE(STAR_ALIGN.out.bams.collect())
-    RSEQC_JUNCT_ANOT(STAR_ALIGN.out.sampleID, STAR_ALIGN.out.bams, STAR_ALIGN.out.bam_index, GET_ANOT.out)
-    RSEQC_JUNCT_SATUR(STAR_ALIGN.out.sampleID, STAR_ALIGN.out.bams, STAR_ALIGN.out.bam_index, GET_ANOT.out)
-    RSEQC_INFER_EXP(STAR_ALIGN.out.sampleID, STAR_ALIGN.out.bams, STAR_ALIGN.out.bam_index, GET_ANOT.out)
-    RSEQC_READ_DISTR(STAR_ALIGN.out.sampleID, STAR_ALIGN.out.bams, STAR_ALIGN.out.bam_index, GET_ANOT.out)
-    RSEQC_TIN(STAR_ALIGN.out.sampleID, STAR_ALIGN.out.bams, STAR_ALIGN.out.bam_index, GET_ANOT.out)
-    RSEQC_INNER_DIST(STAR_ALIGN.out.sampleID, STAR_ALIGN.out.bams, STAR_ALIGN.out.bam_index, GET_ANOT.out)
-    RSEQC_GENE_BODY_COV(STAR_ALIGN.out.sampleID, STAR_ALIGN.out.bams, STAR_ALIGN.out.bam_index, GET_ANOT.out)
+    FEATURE_COUNTS(STAR_ALIGN.out.sampleID, STAR_ALIGN.out.bams, STAR_ALIGN.out.bam_index,GET_ANOT.out.gtf)
+    FEATURE_BIOTYPE(STAR_ALIGN.out.bams.collect(), GET_ANOT.out.gtf)
+    RSEQC_JUNCT_ANOT(STAR_ALIGN.out.sampleID, STAR_ALIGN.out.bams, STAR_ALIGN.out.bam_index, GET_ANOT.out.bed12)
+    RSEQC_JUNCT_SATUR(STAR_ALIGN.out.sampleID, STAR_ALIGN.out.bams, STAR_ALIGN.out.bam_index, GET_ANOT.out.bed12)
+    RSEQC_INFER_EXP(STAR_ALIGN.out.sampleID, STAR_ALIGN.out.bams, STAR_ALIGN.out.bam_index, GET_ANOT.out.bed12)
+    RSEQC_READ_DISTR(STAR_ALIGN.out.sampleID, STAR_ALIGN.out.bams, STAR_ALIGN.out.bam_index, GET_ANOT.out.bed12)
+    RSEQC_TIN(STAR_ALIGN.out.sampleID, STAR_ALIGN.out.bams, STAR_ALIGN.out.bam_index, GET_ANOT.out.bed12)
+    RSEQC_INNER_DIST(STAR_ALIGN.out.sampleID, STAR_ALIGN.out.bams, STAR_ALIGN.out.bam_index, GET_ANOT.out.bed12)
+    RSEQC_GENE_BODY_COV(STAR_ALIGN.out.sampleID, STAR_ALIGN.out.bams, STAR_ALIGN.out.bam_index, GET_ANOT.out.bed12)
 
     MULTIQC(FLASH.out.mix(SAMTOOLS_STAT.out)
                         .mix(PRESEQ_LCEXTRAP.out)
@@ -60,6 +62,53 @@ workflow {
 }
 
 // Beginning of pipeline
+process GET_ANOT {
+    tag "GET_ANOT"
+    publishDir "$params.outdir/Anot", mode: 'copy'
+
+    input:
+    val url_gtf
+    val url_fasta
+
+    output:
+    path "gtfFile.gtf", emit: gtf
+    path "fastafile.fa", emit: fasta
+    path "Protein_coding_genes_REF.bed12", emit: bed12
+
+    script:
+    """
+    wget $url_gtf -O gtfFile.gtf.gz 
+    wget $url_fasta -O fastafile.fa.gz 
+    gunzip gtfFile.gtf.gz
+    gunzip fastafile.fa.gz
+
+    gtfToGenePred gtfFile.gtf genePred
+    genePredToBed genePred bed12
+    sort -k1,1 -k2,2n bed12 > bed12_sorted
+    grep Ensembl_canonical gtfFile.gtf | grep protein_coding | grep -o ENST[0-9]* | sort | uniq | grep -f - bed12_sorted | awk -v OFS="\t" '{\$1="chr"\$1; print \$0}' > Protein_coding_genes_REF.bed12
+    """
+}
+
+process STAR_INDEX {
+    tag "STAR Index"
+    publishDir "$params.outdir/Anot", mode: 'copy'
+
+    input:
+    path gtf 
+    path fasta
+    path bed12
+
+    output:
+    path "STAR_INDEX"
+
+    script:
+    """
+    mkdir STAR_INDEX
+    STAR --runThreadN ${task.cpus} --runMode genomeGenerate --genomeDir STAR_INDEX --genomeFastaFiles $fasta \
+        --sjdbGTFfile  $gtf --sjdbOverhang  149 --genomeSAindexNbases 14
+    """
+}
+
 process READS_CONCAT {
     tag "$ID"
     publishDir "$params.outdir/0-fastQ", mode: 'copy'
@@ -77,46 +126,10 @@ process READS_CONCAT {
     """
 }
 
-process STAR_INDEX {
-    tag "STAR Index"
-
-    output:
-    path "hg38_STAR_INDEX"
-
-    script:
-    """
-    STAR --runThreadN $params.cpus --runMode genomeGenerate --genomeDir hg38_STAR_INDEX --genomeFastaFiles $params.genome_fasta
-        --sjdbGTFfile  $params.anot_GTF --sjdbOverhang  149 --genomeSAindexNbases 14
-    """
-}
-
-process GET_ANOT {
-    tag "GET_ANOT"
-
-    output:
-    path "hg38_protein_coding.bed12"
-
-    script:
-    """
-    wget https://ftp.ensembl.org/pub/release-108/gtf/homo_sapiens/Homo_sapiens.GRCh38.108.chr.gtf.gz
-    wget http://hgdownload.cse.ucsc.edu/admin/exe/linux.x86_64/gtfToGenePred
-    wget http://hgdownload.cse.ucsc.edu/admin/exe/linux.x86_64/genePredToBed
-
-    chmod +x gtfToGenePred genePredToBed
-    gunzip Homo_sapiens.GRCh38.108.chr.gtf.gz
-
-    ./gtfToGenePred Homo_sapiens.GRCh38.108.chr.gtf genePred
-    ./genePredToBed genePred bed12
-    sort -k1,1 -k2,2n bed12 > bed12_sorted
-    grep Ensembl_canonical Homo_sapiens.GRCh38.108.chr.gtf | grep protein_coding | grep -o ENST[0-9]* | sort | uniq | grep -f - bed12_sorted | awk -v OFS="\t" '{\$1="chr"\$1; print \$0}' > hg38_protein_coding.bed12
-    """
-
-}
-
 // Pre-processing of reads
 process FASTQC {
     publishDir "$params.outdir/1-fastqc", mode: 'copy'
-    tag "FASTQC_$ID"
+    tag "${ID}"
 
     input:
     tuple val(ID), path(fastqFile_R1), path(fastqFile_R2)
@@ -136,7 +149,7 @@ process FASTQC {
 
 process TRIM {
     publishDir "$params.outdir/2-trim", mode: 'copy'
-    tag "TRIM_$ID"
+    tag "${ID}"
 
     input:
     tuple val(ID),  path(fastqFile_R1), path(fastqFile_R2)
@@ -160,7 +173,7 @@ process TRIM {
 
 process FLASH {
     publishDir "$params.outdir/QControl/FLASH", mode: 'copy'
-    tag "FASTQC_$ID"
+    tag "${ID}"
 
     input:
     val ID
@@ -172,7 +185,7 @@ process FLASH {
     
     script:
     """
-    flash $trimFastQ_R1 $trimFastQ_R2 --output-prefix ${ID}_flash -t $params.cpus 2>&1 | tee ${ID}_flash_logfilename.log
+    flash $trimFastQ_R1 $trimFastQ_R2 --output-prefix ${ID}_flash -t ${task.cpus} 2>&1 | tee ${ID}_flash_logfilename.log
     """
 
 }
@@ -180,7 +193,7 @@ process FLASH {
 // Alignment of Reads 
 process STAR_ALIGN {
     publishDir "$params.outdir/3-star", mode: 'copy'
-    tag "STAR_ALIGN_${ID}"
+    tag "${ID}"
 
     input:
     path genomeDir
@@ -197,16 +210,16 @@ process STAR_ALIGN {
     script:
     """
     STAR --genomeDir $genomeDir --outSAMtype BAM SortedByCoordinate \
-            --limitBAMsortRAM 100000000000 --readFilesCommand zcat  \
-            --readFilesIn $trimFastQ_R1 $trimFastQ_R2  --runThreadN $params.cpus --outFileNamePrefix $ID
+    --limitBAMsortRAM 100000000000 --readFilesCommand zcat  \
+    --readFilesIn $trimFastQ_R1 $trimFastQ_R2  --runThreadN ${task.cpus} --outFileNamePrefix $ID
     rename "s/Aligned.sortedByCoord.out//g" *
     samtools index ${ID}.bam
     """
 }
 
-process CREATE_BW {
+process STRAND_SPLIT_BAM {
     publishDir "$params.outdir/3-star/strandBAMs", mode: 'copy'
-    tag "STAR_ALIGN_${ID}"
+    tag "${ID}"
 
     input:
     val ID
@@ -215,23 +228,54 @@ process CREATE_BW {
 
     output:
     path "F_${ID}.bam"
-    path "F_${ID}.bam"
-
+    path "R_${ID}.bam"
 
     script:
     """
-    samtools view -f 99 -@ $params.cpus > 
-    samtools view -f 147
-    samtools view -f 183
-    samtools view -f 83
+    samtools view -f 99 -@ ${task.cpus} $bams -o "99_${ID}.bam"
+    samtools view -f 147 -@ ${task.cpus} $bams -o "147_${ID}.bam"
+    samtools view -f 83 -@ ${task.cpus} $bams -o "83_${ID}.bam"
+    samtools view -f 163 -@ ${task.cpus} $bams -o "163_${ID}.bam"
+    samtools merge -@ ${task.cpus} "F_${ID}.bam" "83_${ID}.bam" "163_${ID}.bam"
+    samtools merge -@ ${task.cpus} "R_${ID}.bam" "99_${ID}.bam" "147_${ID}.bam"
+    samtools index "F_${ID}.bam"
+    samtools index "R_${ID}.bam"
     """
 }
 
+process CREATE_BW{
+    publishDir "$params.outdir/3-star/strandBAMs", mode: 'copy'
+    tag "${ID}"
+
+    input:
+    val genome
+    val ID
+    path "F_${ID}.bam"
+    path "R_${ID}.bam"
+
+    output:
+    path "F_${ID}.bw"
+    path "R_${ID}.bw"
+
+    script:
+    """
+    '##########\ntrack ' + ${ID} + '\ncontainer multiWig\nshortLabel ' + ${ID} + '\nlongLabel ' + \
+                        ${ID} + '\ntype bigWig 0 60000\nviewLimits -10000:10000\nvisibility full \
+                        \nmaxHeightPixels 160:120:11\naggregate solidOverlay\nshowSubtrackColorOnUi on\nwindowingFunction maximum \
+                        \nalwaysZero on\npriority 1.4\nconfigurable on\nautoScale on\n\ntrack ' + ${ID} + '_F\nbigDataUrl ' + \
+                        "F_${ID}.bw" + \
+                        '\nshortLabel ' + ${ID} + ' F\nlongLabel ' + ${ID} + ' Forward\nparent ' + ${ID} + '\ntype bigWig' + \
+                        '\ncolor 0,0,255\n\ntrack ' + ${ID} + '_R\nbigDataUrl ' + \
+                        'R_${ID}.bw' + \
+                        '\nshortLabel ' + ${ID} + ' R' + \
+                        '\nlongLabel ' + ${ID} + ' Reverse\nparent ' + ${ID} + '\ntype bigWig\ncolor 255,0,0\n\n' > $genome/trackDb.txt
+    """
+}
 
 // Post-processing of reads
 process PRESEQ_LCEXTRAP {
     publishDir "$params.outdir/QControl/PRESEQ", mode: 'copy'
-    tag "PRESEQ_LCEXTRAP_${ID}"
+    tag "${ID}"
 
     input:
     val ID 
@@ -249,7 +293,7 @@ process PRESEQ_LCEXTRAP {
 
 process SAMTOOLS_STAT {
     publishDir "$params.outdir/QControl/SAMTOOLS_STAT", mode: 'copy'
-    tag "SAMTOOLS_STAT_${ID}"
+    tag "${ID}"
 
     input:
     val ID 
@@ -270,35 +314,37 @@ process SAMTOOLS_STAT {
 
 process FEATURE_COUNTS {
     publishDir "$params.outdir/QControl/FEATURE_COUNTS", mode: 'copy'
-    tag "FEATURE_COUNTS_${ID}"
+    tag "${ID}"
 
     input:
     val ID 
     path BAM
     path index_BAM
+    path gtf
 
     output:
     path "*"
 
     script:
     """
-    featureCounts -p -a $params.anot_GTF -o ${ID}_FC.counts  -t transcript -g gene_id -s 2 -T $params.cpus --fracOverlap 0.9 -R CORE $BAM
+    featureCounts -p -a $gtf -o ${ID}_FC.counts  -t transcript -g gene_id -s 2 -T ${task.cpus} --fracOverlap 0.9 -R CORE $BAM
     """
 }
 
 process FEATURE_BIOTYPE {
     publishDir "$params.outdir/QControl/FEATURE_BIOTYPE", mode: 'copy'
-    tag "FEATURE_BIOTYPE"
+    tag "${ID}"
 
     input:
     path BAM
+    path gtf
 
     output: 
     path "biotype_analysis.txt"
 
     script:
     """
-    featureCounts -p -a $params.anot_GTF -o FC.biotype  -t transcript -g gene_biotype -s 2 -T $params.cpus --fracOverlap 0.9 -R CORE $BAM
+    featureCounts -p -a $gtf -o FC.biotype  -t transcript -g gene_biotype -s 2 -T ${task.cpus} --fracOverlap 0.9 -R CORE $BAM
     cut -f1,7- FC.biotype | tail -n+2 | sed 's/Geneid/Status/g' > summary_biotype.txt
     awk '{ for (i=1; i<=NF; i++) a[i]= (a[i]? a[i] FS \$i: \$i) } END{ for (i in a) print a[i] }' summary_biotype.txt > biotype_analysis.txt
     """
@@ -306,7 +352,7 @@ process FEATURE_BIOTYPE {
 
 process RSEQC_JUNCT_ANOT {
     publishDir "$params.outdir/QControl/RSEQC/JUNCT_ANOT", mode: 'copy'
-    tag "RSEQC_JUNCT_ANOT_${ID}"
+    tag "${ID}"
 
     input:
     val ID 
@@ -325,7 +371,7 @@ process RSEQC_JUNCT_ANOT {
 
 process RSEQC_JUNCT_SATUR {
     publishDir "$params.outdir/QControl/RSEQC/JUNCT_SATUR", mode: 'copy'
-    tag "RSEQC_JUNCT_SATUR_${ID}"
+    tag "${ID}"
 
     input:
     val ID 
@@ -344,7 +390,7 @@ process RSEQC_JUNCT_SATUR {
 
 process RSEQC_INFER_EXP {
     publishDir "$params.outdir/QControl/RSEQC/INFER_EXP", mode: 'copy'
-    tag "RSEQC_INFER_EXP_${ID}"
+    tag "${ID}"
 
     input:
     val ID 
@@ -363,7 +409,7 @@ process RSEQC_INFER_EXP {
 
 process RSEQC_READ_DISTR {
     publishDir "$params.outdir/QControl/RSEQC/READ_DISTR", mode: 'copy'
-    tag "RSEQC_READ_DISTR_${ID}"
+    tag "${ID}"
 
     input:
     val ID 
@@ -382,7 +428,7 @@ process RSEQC_READ_DISTR {
 
 process RSEQC_TIN {
     publishDir "$params.outdir/QControl/RSEQC/TIN", mode: 'copy'
-    tag "RSEQC_TIN_${ID}"
+    tag "${ID}"
 
     input:
     val ID 
@@ -401,7 +447,7 @@ process RSEQC_TIN {
 
 process RSEQC_INNER_DIST {
     publishDir "$params.outdir/QControl/RSEQC/INNER_DIST", mode: 'copy'
-    tag "RSEQC_INNER_DIST_${ID}"
+    tag "${ID}"
 
     input:
     val ID 
@@ -420,7 +466,7 @@ process RSEQC_INNER_DIST {
 
 process RSEQC_GENE_BODY_COV {
     publishDir "$params.outdir/QControl/RSEQC/GENE_BODY_COV", mode: 'copy'
-    tag "RSEQC_GENE_BODY_COV_${ID}"
+    tag "${ID}"
 
     input:
     val ID 
